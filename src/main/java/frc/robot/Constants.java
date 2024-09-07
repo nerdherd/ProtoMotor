@@ -4,6 +4,7 @@
 
 package frc.robot;
 
+import frc.robot.util.preferences.PrefBool;
 import frc.robot.util.preferences.PrefDouble;
 
 /**
@@ -15,13 +16,12 @@ import frc.robot.util.preferences.PrefDouble;
  * constants are needed, to reduce verbosity.
  */
 public final class Constants {
+  public static PrefDouble kPosition = new PrefDouble("Position", 0.0);
   public static PrefDouble kRPM = new PrefDouble("RPM", 0.0);
   public static PrefDouble kP = new PrefDouble("P", 0);
   public static PrefDouble kI = new PrefDouble("I", 0);
   public static PrefDouble kD = new PrefDouble("D", 0);
   public static PrefDouble kV = new PrefDouble("V", 0);
-  public static final double topStopPosition = 0;
-  public static final double lowerStopPosition = 0;
   public enum MotorIDs {
     Motor1(0),
     ;

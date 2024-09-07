@@ -6,14 +6,13 @@ package frc.robot;
 
 import java.util.HashMap;
 
-import javax.swing.text.Position;
-
 import com.ctre.phoenix6.StatusCode;
 import com.ctre.phoenix6.configs.TalonFXConfiguration;
 import com.ctre.phoenix6.configs.TalonFXConfigurator;
 import com.ctre.phoenix6.controls.VelocityVoltage;
 import com.ctre.phoenix6.hardware.TalonFX;
 
+import edu.wpi.first.math.controller.PIDController;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.TimedRobot;
 import edu.wpi.first.wpilibj.shuffleboard.Shuffleboard;
@@ -34,6 +33,9 @@ public class Robot extends TimedRobot {
   public HashMap<Integer, TalonFX> motors = new HashMap<Integer, TalonFX>();
   public HashMap<Integer, VelocityVoltage> velocityRequests = new HashMap<Integer, VelocityVoltage>();
   public HashMap<Integer, PrefBool> enabled = new HashMap<Integer, PrefBool>();
+  public HashMap<Integer, PIDController> pidControllers = new HashMap<Integer, PIDController>();
+  public HashMap<Integer, Boolean> usePID = new HashMap<Integer, Boolean>();
+  public HashMap<Integer, Double> pidPositions = new HashMap<Integer, Double>();
   public ShuffleboardTab tab = Shuffleboard.getTab("MotorTesting");
   /**
    * This function is run when the robot is first started up and should be used for any
@@ -56,16 +58,20 @@ public class Robot extends TimedRobot {
       PrefBool b = new PrefBool("Motor" + Integer.toString(i), false);
       enabled.put(i, b);
       b.loadPreferences();
-      tab.addDouble("Motor" + Integer.toString(i) + " Velocity", () -> motor.getVelocity().getValueAsDouble());
-      if (motor.getPosition().getValue() >= Constants.topStopPosition) {
-        motor.set(0);
-      } else if (motor.getPosition().getValue() >= Constants.lowerStopPosition) {
-        motor.set(0);
-      } 
       
+      TalonFXConfigurator configurator = motor.getConfigurator();
+      TalonFXConfiguration config = new TalonFXConfiguration();
+      configurator.refresh(config);
+      PIDController pidController = new PIDController(config.Slot0.kP, config.Slot0.kI, config.Slot0.kD);
+      pidControllers.put(i, pidController);
+      pidPositions.put(i, 0.0);
+      usePID.put(i, false);
+      tab.addDouble("Motor" + Integer.toString(i) + " Velocity", () -> motor.getVelocity().getValueAsDouble());
     }
     SmartDashboard.putData("Stop All", stopAllMotorsCommand());
     SmartDashboard.putData("Set RPM of Enabled", setRPMsOfEnabledCommand());
+    SmartDashboard.putData("Set Position of Enabled", setPIDsOfEnabledCommand());
+    SmartDashboard.putData("Set PID of Enabled", setPIDsOfEnabledCommand());
   }
 
   void stopAllMotors() {
@@ -76,8 +82,33 @@ public class Robot extends TimedRobot {
   }
 
   void setRPMsOfEnabled() {
-    enabled.get(0).loadPreferences();
     Constants.kRPM.loadPreferences();
+    for (Constants.MotorIDs id : Constants.MotorIDs.values()) {
+      enabled.get(id.id).loadPreferences();
+      if (enabled.get(id.id).get()) {
+        usePID.put(id.id, false);
+        velocityRequests.get(id.id).Velocity = Constants.kRPM.get();
+        pidControllers.get(id.id).reset();
+        motors.get(id.id).setControl(velocityRequests.get(id.id));
+        if (Math.abs(Constants.kRPM.get()) < 0.01) {
+          motors.get(id.id).setVoltage(0);
+        }
+      }
+    }
+  }
+
+  void setPositionsOfEnabled() {
+    Constants.kPosition.loadPreferences();
+    for (Constants.MotorIDs id : Constants.MotorIDs.values()) {
+      enabled.get(id.id).loadPreferences();
+      if (enabled.get(id.id).get()) {
+        usePID.put(id.id, true);
+        pidPositions.put(id.id, Constants.kPosition.get());
+      }
+    }
+  }
+
+  void setPIDsOfEnabled() {
     Constants.kP.loadPreferences();
     Constants.kI.loadPreferences();
     Constants.kD.loadPreferences();
@@ -85,11 +116,6 @@ public class Robot extends TimedRobot {
     for (Constants.MotorIDs id : Constants.MotorIDs.values()) {
       enabled.get(id.id).loadPreferences();
       if (enabled.get(id.id).get()) {
-        velocityRequests.get(id.id).Velocity = Constants.kRPM.get();
-        motors.get(id.id).setControl(velocityRequests.get(id.id));
-        if (Math.abs(Constants.kRPM.get()) < 0.01) {
-          motors.get(id.id).setVoltage(0);
-        }
         setMotorPID(motors.get(id.id), Constants.kP.get(), Constants.kI.get(), Constants.kD.get(), Constants.kV.get());
       }
     }
@@ -101,6 +127,10 @@ public class Robot extends TimedRobot {
 
   Command setRPMsOfEnabledCommand() {
     return Commands.runOnce(() -> setRPMsOfEnabled());
+  }
+
+  Command setPIDsOfEnabledCommand() {
+    return Commands.runOnce(() -> setPIDsOfEnabled());
   }
 
   void setMotorPID(TalonFX mootor, double perbosity, double ierbosity, double derbosity, double verbosity) {
@@ -164,7 +194,19 @@ public class Robot extends TimedRobot {
 
   /** This function is called periodically during operator control. */
   @Override
-  public void teleopPeriodic() {}
+  public void teleopPeriodic() {
+    for (Constants.MotorIDs id : Constants.MotorIDs.values()) {
+      if (usePID.get(id.id)) {
+        TalonFXConfigurator configurator = motors.get(id.id).getConfigurator();
+        TalonFXConfiguration config = new TalonFXConfiguration();
+        configurator.refresh(config);
+        pidControllers.get(id.id).setP(config.Slot0.kP);
+        pidControllers.get(id.id).setI(config.Slot0.kI);
+        pidControllers.get(id.id).setD(config.Slot0.kD);
+        pidControllers.get(id.id).calculate(motors.get(id.id).getPosition().getValueAsDouble(), pidPositions.get(id.id));
+      }
+    }
+  }
 
   @Override
   public void testInit() {
