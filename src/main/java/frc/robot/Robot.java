@@ -6,6 +6,8 @@ package frc.robot;
 
 import java.util.HashMap;
 
+import javax.swing.text.Position;
+
 import com.ctre.phoenix6.StatusCode;
 import com.ctre.phoenix6.configs.TalonFXConfiguration;
 import com.ctre.phoenix6.configs.TalonFXConfigurator;
@@ -55,6 +57,12 @@ public class Robot extends TimedRobot {
       enabled.put(i, b);
       b.loadPreferences();
       tab.addDouble("Motor" + Integer.toString(i) + " Velocity", () -> motor.getVelocity().getValueAsDouble());
+      if (motor.getPosition().getValue() >= Constants.topStopPosition) {
+        motor.set(0);
+      } else if (motor.getPosition().getValue() >= Constants.lowerStopPosition) {
+        motor.set(0);
+      } 
+      
     }
     SmartDashboard.putData("Stop All", stopAllMotorsCommand());
     SmartDashboard.putData("Set RPM of Enabled", setRPMsOfEnabledCommand());
