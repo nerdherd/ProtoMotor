@@ -67,10 +67,12 @@ public class Robot extends TimedRobot {
       pidPositions.put(i, 0.0);
       usePID.put(i, false);
       tab.addDouble("Motor" + Integer.toString(i) + " Velocity", () -> motor.getVelocity().getValueAsDouble());
+      tab.addDouble("Motor" + Integer.toString(i) + " Position", () -> motor.getPosition().getValueAsDouble());
+      tab.addBoolean("Motor" + Integer.toString(i) + " Use PID", () -> usePID.get(i));
     }
     SmartDashboard.putData("Stop All", stopAllMotorsCommand());
     SmartDashboard.putData("Set RPM of Enabled", setRPMsOfEnabledCommand());
-    SmartDashboard.putData("Set Position of Enabled", setPIDsOfEnabledCommand());
+    SmartDashboard.putData("Set Position of Enabled", setPositionsOfEnabledCommand());
     SmartDashboard.putData("Set PID of Enabled", setPIDsOfEnabledCommand());
   }
 
@@ -78,6 +80,7 @@ public class Robot extends TimedRobot {
     for (Constants.MotorIDs id : Constants.MotorIDs.values()) {
       velocityRequests.get(id.id).Velocity = 0;
       motors.get(id.id).setVoltage(0);
+      usePID.put(id.id, false);
     }
   }
 
@@ -87,9 +90,9 @@ public class Robot extends TimedRobot {
       enabled.get(id.id).loadPreferences();
       if (enabled.get(id.id).get()) {
         usePID.put(id.id, false);
-        velocityRequests.get(id.id).Velocity = Constants.kRPM.get();
+        motors.get(id.id).set(Constants.kRPM.get());
         pidControllers.get(id.id).reset();
-        motors.get(id.id).setControl(velocityRequests.get(id.id));
+        // motors.get(id.id).setControl(velocityRequests.get(id.id));
         if (Math.abs(Constants.kRPM.get()) < 0.01) {
           motors.get(id.id).setVoltage(0);
         }
@@ -116,7 +119,7 @@ public class Robot extends TimedRobot {
     for (Constants.MotorIDs id : Constants.MotorIDs.values()) {
       enabled.get(id.id).loadPreferences();
       if (enabled.get(id.id).get()) {
-        setMotorPID(motors.get(id.id), Constants.kP.get(), Constants.kI.get(), Constants.kD.get(), Constants.kV.get());
+        setMotorPID(id.id, Constants.kP.get(), Constants.kI.get(), Constants.kD.get(), Constants.kV.get());
       }
     }
   }
@@ -129,11 +132,16 @@ public class Robot extends TimedRobot {
     return Commands.runOnce(() -> setRPMsOfEnabled());
   }
 
+  Command setPositionsOfEnabledCommand() {
+    return Commands.runOnce(() -> setPositionsOfEnabled());
+  }
+
   Command setPIDsOfEnabledCommand() {
     return Commands.runOnce(() -> setPIDsOfEnabled());
   }
 
-  void setMotorPID(TalonFX mootor, double perbosity, double ierbosity, double derbosity, double verbosity) {
+  void setMotorPID(int id, double perbosity, double ierbosity, double derbosity, double verbosity) {
+    TalonFX mootor = motors.get(id);
     TalonFXConfigurator configurator = mootor.getConfigurator();
     TalonFXConfiguration config = new TalonFXConfiguration();
     configurator.refresh(config);
@@ -141,6 +149,10 @@ public class Robot extends TimedRobot {
     config.Slot0.kI = ierbosity;
     config.Slot0.kD = derbosity;
     config.Slot0.kV = verbosity;
+    PIDController controller = pidControllers.get(id);
+    controller.setP(perbosity);
+    controller.setI(ierbosity);
+    controller.setD(derbosity);
     StatusCode status = configurator.apply(config);
     if (!status.isOK()){
       DriverStation.reportError("Could not apply shooter configs, error code:"+ status.toString(), new Error().getStackTrace());
@@ -197,13 +209,14 @@ public class Robot extends TimedRobot {
   public void teleopPeriodic() {
     for (Constants.MotorIDs id : Constants.MotorIDs.values()) {
       if (usePID.get(id.id)) {
-        TalonFXConfigurator configurator = motors.get(id.id).getConfigurator();
-        TalonFXConfiguration config = new TalonFXConfiguration();
-        configurator.refresh(config);
-        pidControllers.get(id.id).setP(config.Slot0.kP);
-        pidControllers.get(id.id).setI(config.Slot0.kI);
-        pidControllers.get(id.id).setD(config.Slot0.kD);
-        pidControllers.get(id.id).calculate(motors.get(id.id).getPosition().getValueAsDouble(), pidPositions.get(id.id));
+        double val = pidControllers.get(id.id).calculate(motors.get(id.id).getPosition().getValueAsDouble(), pidPositions.get(id.id));
+        if (val == val) motors.get(id.id).set(val); // checks if val is a number (nan != nan)
+        // motors.get(id.id).setControl(velocityRequests.get(id.id));
+        if (pidControllers.get(id.id).atSetpoint() || (Math.abs(motors.get(id.id).getPosition().getValueAsDouble() - pidPositions.get(id.id)) < 5)) { // TODO configure deadzone
+          usePID.put(id.id, false);
+          velocityRequests.get(id.id).Velocity = 0;
+          motors.get(id.id).setVoltage(0.0);
+        }
       }
     }
   }
